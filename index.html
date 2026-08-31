@@ -1842,7 +1842,7 @@
      do Gemini no código — o Firebase cuida disso do lado dele. -->
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
-  import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app-check.js';
+  import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app-check.js';
   import { getAI, getGenerativeModel, GoogleAIBackend } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-ai.js';
 
   try{
@@ -1850,7 +1850,7 @@
 
     if(window.RECAPTCHA_SITE_KEY && window.RECAPTCHA_SITE_KEY !== 'COLE_AQUI'){
       initializeAppCheck(aiApp, {
-        provider: new ReCaptchaV3Provider(window.RECAPTCHA_SITE_KEY),
+        provider: new ReCaptchaEnterpriseProvider(window.RECAPTCHA_SITE_KEY),
         isTokenAutoRefreshEnabled: true
       });
     }
