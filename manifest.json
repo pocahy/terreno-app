@@ -1,0 +1,15 @@
+{
+  "name": "Terreno — companheiro diário",
+  "short_name": "Terreno",
+  "description": "App pessoal para alimentação, limpeza, hábitos e dicas no dia a dia com TDAH.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EAEDE4",
+  "theme_color": "#63805E",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
