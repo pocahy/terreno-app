@@ -484,6 +484,13 @@
       <div class="section-title">Explorar</div>
       <div class="card" id="tipsAccordion"></div>
 
+      <div class="section-title">Este aparelho</div>
+      <div class="card">
+        <p style="margin-bottom:10px;">Pra usar a sugestão de receitas por IA num aparelho ou navegador novo, você precisa autorizar esse código uma vez no Firebase (Segurança → App Check → Apps → terreno-web → Gerenciar tokens de depuração).</p>
+        <button class="btn secondary small" id="showDebugTokenBtn">🔑 Ver código deste aparelho</button>
+        <div id="debugTokenBox" style="margin-top:10px;"></div>
+      </div>
+
     </section>
 
   </main>
@@ -1725,6 +1732,29 @@
   // ---------------------------------------------------------------
   // DICAS
   // ---------------------------------------------------------------
+  document.getElementById('showDebugTokenBtn').addEventListener('click', ()=>{
+    const box = document.getElementById('debugTokenBox');
+    const token = window.terrenoDebugToken;
+    if(!token){
+      box.innerHTML = '<div class="empty">A IA ainda não terminou de carregar. Aguarde alguns segundos e tente de novo.</div>';
+      return;
+    }
+    box.innerHTML = `
+      <div class="chip" style="width:100%;justify-content:space-between;font-family:monospace;font-size:12.5px;word-break:break-all;">
+        <span>${token}</span>
+      </div>
+      <button class="btn small secondary" id="copyDebugTokenBtn" style="margin-top:8px;">Copiar código</button>
+      <p id="copyDebugTokenMsg" style="margin-top:6px;font-size:12px;"></p>`;
+    document.getElementById('copyDebugTokenBtn').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText(token);
+        document.getElementById('copyDebugTokenMsg').textContent = 'Copiado ✓';
+      }catch(e){
+        document.getElementById('copyDebugTokenMsg').textContent = 'Não consegui copiar automaticamente — selecione o texto acima manualmente.';
+      }
+    });
+  });
+
   function renderTips(){
     const box = document.getElementById('tipsAccordion');
     box.innerHTML = TIPS.map((t,i)=>`
@@ -1849,11 +1879,21 @@
     const aiApp = initializeApp(window.FIREBASE_CONFIG, 'ai-app');
 
     // Modo de depuração do App Check: mais simples que reCAPTCHA para um
-    // app de uso pessoal. Gera um token fixo que você registra uma vez
-    // no console do Firebase (Segurança > App Check > Apps > ... >
-    // Gerenciar tokens de depuração). Abra o console do navegador (F12)
-    // para ver o token na primeira vez que o app carregar.
-    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    // app de uso pessoal. Em vez de deixar o token só no console (difícil
+    // de ver no celular), guardamos ele no navegador e mostramos um botão
+    // na interface pra copiar — funciona em qualquer aparelho, sem precisar
+    // conectar no computador.
+    function getOrCreateDebugToken(){
+      let t = localStorage.getItem('terreno-appcheck-debug-token');
+      if(!t){
+        t = crypto.randomUUID();
+        localStorage.setItem('terreno-appcheck-debug-token', t);
+      }
+      return t;
+    }
+    const debugToken = getOrCreateDebugToken();
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
+    window.terrenoDebugToken = debugToken;
 
     initializeAppCheck(aiApp, {
       provider: new ReCaptchaEnterpriseProvider(window.RECAPTCHA_SITE_KEY || 'debug-mode'),
