@@ -244,6 +244,19 @@
   .timer-phase.pausa{background:var(--mustard-pale);color:#7A5A17;}
   .timer-center{display:flex;flex-direction:column;align-items:center;gap:8px;}
   .timer-sub{font-size:12.5px;color:var(--ink-faint);}
+  .med-row{
+    display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);
+  }
+  .med-row:first-child{border-top:none;}
+  .med-row .name{font-weight:600;font-size:14.5px;}
+  .med-row .dose{font-size:12px;color:var(--ink-faint);margin-top:1px;}
+  .dose-dots{display:flex;gap:6px;flex-shrink:0;}
+  .dose-dot{
+    width:32px;height:32px;border-radius:50%;border:2px solid var(--moss);background:var(--surface);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--moss-dark);
+  }
+  .dose-dot.on{background:var(--moss);color:#fff;}
+
   select.tselect{
     width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);
     padding:11px 12px;font-size:14.5px;font-family:inherit;background:var(--surface);color:var(--ink);
@@ -304,6 +317,9 @@
 
       <div class="section-title">Limpeza</div>
       <div class="card" id="homeCleaning"></div>
+
+      <div class="section-title">Medicação</div>
+      <div class="card" id="homeMeds"></div>
 
       <div class="section-title">Compras</div>
       <div class="card" id="homeShopping"></div>
@@ -392,6 +408,21 @@
 
     </section>
 
+    <!-- ===================== MEDICAÇÃO ===================== -->
+    <section class="tab" id="tab-medicacao">
+
+      <div class="section-title">Hoje</div>
+      <div class="card" id="medsCard"></div>
+
+      <div style="margin-bottom:14px;">
+        <button class="btn secondary small" id="addMedBtn">+ Adicionar medicamento</button>
+      </div>
+
+      <div class="section-title">Adesão (últimos 7 dias)</div>
+      <div class="card" id="medsAdherenceCard"></div>
+
+    </section>
+
     <!-- ===================== DICAS ===================== -->
     <section class="tab" id="tab-dicas">
 
@@ -428,6 +459,10 @@
     <button class="navbtn" data-tab="habitos">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>
       Hábitos
+    </button>
+    <button class="navbtn" data-tab="medicacao">
+      <svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6" rx="3"/><path d="M12 9v6"/></svg>
+      Remédios
     </button>
     <button class="navbtn" data-tab="dicas">
       <svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z"/></svg>
@@ -589,6 +624,13 @@
     {name:'Geladeira por dentro', freq:30}
   ];
 
+  const DEFAULT_MEDS = [
+    {name:'Ritalina LA', dose:'20mg', timesPerDay:1},
+    {name:'Elifore', dose:'100mg', timesPerDay:1},
+    {name:'Ativ B', dose:'1000mcg', timesPerDay:1},
+    {name:'Vitamina D3', dose:'5.000 UI', timesPerDay:1}
+  ];
+
   const DEFAULT_HABITS = [
     'Tomar água',
     'Tomar a medicação',
@@ -632,6 +674,8 @@
     shoppingList: null,
     cleaning: DEFAULT_TASKS.map((t,i)=>({id:'c'+i, name:t.name, freq:t.freq, lastDone:null, history:[], durations:[]})),
     habits: DEFAULT_HABITS.map((h,i)=>({id:'h'+i, name:h})),
+    medications: DEFAULT_MEDS.map((m,i)=>({id:'m'+i, name:m.name, dose:m.dose, timesPerDay:m.timesPerDay})),
+    medCompletions: {}, // { 'YYYY-MM-DD': { medId: [true,false,...] } }
     completions: {}, // { 'YYYY-MM-DD': { habitId: true } }
     activeTimer: null // { taskId, phase:'foco'|'pausa', phaseEndsAt, pomodorosCompleted, startedAt }
   };
@@ -657,6 +701,8 @@
       history: t.history || (t.lastDone ? [t.lastDone] : []),
       durations: t.durations || []
     }));
+    state.medications = state.medications || [];
+    state.medCompletions = state.medCompletions || {};
     renderAll();
   }
   let saveTimer=null;
@@ -738,8 +784,10 @@
     const totalHabits = state.habits.length;
     const doneTasksToday = state.cleaning.filter(c => c.lastDone === t).length;
     const dueTasksToday = state.cleaning.filter(c => daysSince(c.lastDone) >= c.freq).length + doneTasksToday;
-    const totalUnits = totalHabits + Math.max(dueTasksToday,1);
-    const doneUnits = doneHabits + doneTasksToday;
+    const totalMedDoses = state.medications.reduce((a,m)=>a+m.timesPerDay,0);
+    const doneMedDoses = state.medications.reduce((a,m)=>a + medDosesToday(m.id).filter(Boolean).length, 0);
+    const totalUnits = totalHabits + Math.max(dueTasksToday,1) + totalMedDoses;
+    const doneUnits = doneHabits + doneTasksToday + doneMedDoses;
     const pct = totalUnits ? Math.round((doneUnits/totalUnits)*100) : 0;
 
     const circumference = 169.6;
@@ -1325,6 +1373,90 @@
     return count;
   }
 
+  // ---------------------------------------------------------------
+  // MEDICAÇÃO
+  // ---------------------------------------------------------------
+  function medDosesToday(medId){
+    const t = todayStr();
+    const arr = (state.medCompletions[t] || {})[medId];
+    return arr || [];
+  }
+
+  function toggleMedDose(medId, idx, timesPerDay){
+    const t = todayStr();
+    state.medCompletions[t] = state.medCompletions[t] || {};
+    const arr = state.medCompletions[t][medId] || new Array(timesPerDay).fill(false);
+    arr[idx] = !arr[idx];
+    state.medCompletions[t][medId] = arr;
+    saveState(); renderMeds(); renderHeader(); renderHome();
+  }
+
+  function renderMeds(){
+    const card = document.getElementById('medsCard');
+    if(!card) return;
+    if(state.medications.length===0){
+      card.innerHTML = '<div class="empty">Nenhum medicamento cadastrado ainda.</div>';
+    } else {
+      card.innerHTML = state.medications.map(m=>{
+        const doses = medDosesToday(m.id);
+        const dots = Array.from({length:m.timesPerDay}).map((_,i)=>{
+          const on = !!doses[i];
+          return `<div class="dose-dot ${on?'on':''}" data-med="${m.id}" data-idx="${i}">${i+1}</div>`;
+        }).join('');
+        return `<div class="med-row">
+          <div style="flex:1;">
+            <div class="name">${m.name}</div>
+            <div class="dose">${m.dose}${m.timesPerDay>1?` · ${m.timesPerDay}x ao dia`:''}</div>
+          </div>
+          <div class="dose-dots">${dots}</div>
+        </div>`;
+      }).join('');
+      card.querySelectorAll('.dose-dot').forEach(dot=>{
+        dot.addEventListener('click', ()=>{
+          const med = state.medications.find(m=>m.id===dot.dataset.med);
+          toggleMedDose(med.id, parseInt(dot.dataset.idx), med.timesPerDay);
+        });
+      });
+    }
+    renderMedsAdherence();
+  }
+
+  function renderMedsAdherence(){
+    const box = document.getElementById('medsAdherenceCard');
+    if(!box) return;
+    if(state.medications.length===0){
+      box.innerHTML = '<div class="empty">Cadastre um medicamento pra acompanhar a adesão.</div>';
+      return;
+    }
+    box.innerHTML = state.medications.map(m=>{
+      let taken=0, possible=0;
+      for(let i=0;i<7;i++){
+        const d = new Date(); d.setDate(d.getDate()-i);
+        const ds = d.toISOString().slice(0,10);
+        const arr = (state.medCompletions[ds]||{})[m.id] || [];
+        possible += m.timesPerDay;
+        taken += arr.filter(Boolean).length;
+      }
+      const pct = possible ? Math.round((taken/possible)*100) : 0;
+      return `<div class="med-row">
+        <div style="flex:1;">
+          <div class="name">${m.name}</div>
+          <div class="dose">${taken}/${possible} doses esta semana</div>
+        </div>
+        <div class="eyebrow" style="color:${pct>=80?'var(--moss-dark)':'var(--rose)'};">${pct}%</div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('addMedBtn').addEventListener('click', ()=>{
+    const name = prompt('Nome do medicamento:');
+    if(!name) return;
+    const dose = prompt('Dose (ex: 20mg):', '') || '';
+    const timesPerDay = parseInt(prompt('Quantas vezes ao dia?', '1')) || 1;
+    state.medications.push({id:'m'+Date.now(), name, dose, timesPerDay});
+    saveState(); renderMeds(); renderHome();
+  });
+
   function renderHabits(){
     const card = document.getElementById('habitsCard');
     const t = todayStr();
@@ -1391,6 +1523,24 @@
   function renderHome(){
     const t = todayStr();
 
+    // Medicação
+    const md = document.getElementById('homeMeds');
+    if(state.medications.length===0){
+      md.innerHTML = '<div class="empty">Nenhum medicamento cadastrado ainda.</div>';
+    } else {
+      const totalDoses = state.medications.reduce((a,m)=>a+m.timesPerDay,0);
+      const doneDoses = state.medications.reduce((a,m)=>a + medDosesToday(m.id).filter(Boolean).length, 0);
+      const pending = state.medications.filter(m => medDosesToday(m.id).filter(Boolean).length < m.timesPerDay);
+      if(pending.length===0){
+        md.innerHTML = '<p style="color:var(--moss-dark);font-weight:600;">Todos os medicamentos de hoje tomados 💊</p>';
+      } else {
+        md.innerHTML = `<p style="margin-bottom:8px;">${doneDoses} de ${totalDoses} doses tomadas hoje. Faltam:</p>` +
+          pending.slice(0,4).map(m=>`<div class="habit-row" style="padding:8px 0;"><div class="name" style="font-weight:500;font-size:13.5px;">${m.name} (${m.dose})</div></div>`).join('') +
+          `<button class="btn ghost omeds" style="padding-top:6px;">Abrir Remédios →</button>`;
+        md.querySelector('.omeds').addEventListener('click', ()=>goTab('medicacao'));
+      }
+    }
+
     // Hábitos
     const hb = document.getElementById('homeHabits');
     const pendentes = state.habits.filter(h => !(state.completions[t] && state.completions[t][h.id]));
@@ -1442,6 +1592,7 @@
     renderShoppingCard();
     renderCleaning();
     renderPomodoro();
+    renderMeds();
     renderHabits();
     renderTips();
     renderHome();
