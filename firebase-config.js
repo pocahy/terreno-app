@@ -12,3 +12,10 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "325264560286",
   appId: "1:325264560286:web:4fd6e1c24edd6edf87eb8f"
 };
+window.FIREBASE_CONFIG = FIREBASE_CONFIG;
+
+// Chave do reCAPTCHA v3, usada pelo Firebase App Check para proteger
+// o uso da IA (Gemini). Você recebe essa chave ao ativar "AI Logic"
+// no console do Firebase — veja o passo a passo em COMO-PUBLICAR.md.
+const RECAPTCHA_SITE_KEY = "6LeN8KAtAAAAAEctmidJxFiH1vQZrNy0C622he3V";
+window.RECAPTCHA_SITE_KEY = RECAPTCHA_SITE_KEY;

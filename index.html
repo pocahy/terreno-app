@@ -382,7 +382,14 @@
         </div>
         <div class="chip-row" id="ingredientChips"></div>
         <div id="recipeResults" style="margin-top:6px;"></div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn secondary small" id="askAiBtn">🤖 Pedir sugestão à IA</button>
+        </div>
+        <div id="aiResults" style="margin-top:10px;"></div>
       </div>
+
+      <div class="section-title">Minhas receitas salvas (IA)</div>
+      <div class="card" id="savedRecipesCard"></div>
 
       <div class="section-title">Lista de compras da semana</div>
       <div class="card" id="shoppingCard"></div>
@@ -708,6 +715,7 @@
     ingredients: [],
     foodGoal: 'geral',
     recipeFeedback: {},
+    customRecipes: [], // receitas sugeridas pela IA e salvas pelo usuário
     shoppingPrefs: null,
     shoppingList: null,
     cleaning: DEFAULT_TASKS.map((t,i)=>({id:'c'+i, name:t.name, freq:t.freq, lastDone:null, history:[], durations:[]})),
@@ -741,6 +749,7 @@
     }));
     state.medications = state.medications || [];
     state.medCompletions = state.medCompletions || {};
+    state.customRecipes = state.customRecipes || [];
     renderAll();
   }
   let saveTimer=null;
@@ -979,6 +988,78 @@
     saveState(); renderGoalToggle(); renderRecipes(); renderBatchRecipes();
   });
 
+  // ---------------------------------------------------------------
+  // SUGESTÕES DA IA (Gemini via Firebase AI Logic)
+  // ---------------------------------------------------------------
+  document.getElementById('askAiBtn').addEventListener('click', async ()=>{
+    if(state.ingredients.length===0){
+      alert('Adicione pelo menos um ingrediente antes de pedir uma sugestão.');
+      return;
+    }
+    const box = document.getElementById('aiResults');
+    box.innerHTML = '<div class="empty">Perguntando à IA... isso pode levar alguns segundos.</div>';
+    try{
+      if(!window.askGeminiForRecipes) throw new Error('IA ainda não configurada neste app.');
+      const recipes = await window.askGeminiForRecipes(state.ingredients, state.foodGoal);
+      if(!Array.isArray(recipes) || recipes.length===0){
+        box.innerHTML = '<div class="empty">A IA não retornou nenhuma receita dessa vez. Tente de novo.</div>';
+        return;
+      }
+      box.innerHTML = recipes.map((r,idx)=>`<div class="recipe">
+        <div class="row1"><span class="name">${r.name}</span><span class="meta">${r.minutes||'?'} min</span></div>
+        <div class="eyebrow" style="margin-top:2px;">sugerido pela IA</div>
+        <details><summary>ver modo de preparo</summary><ol>${(r.steps||[]).map(s=>`<li>${s}</li>`).join('')}</ol></details>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn small secondary saveAiBtn" data-idx="${idx}">💾 Salvar receita</button>
+        </div>
+      </div>`).join('');
+      box.querySelectorAll('.saveAiBtn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const r = recipes[parseInt(btn.dataset.idx)];
+          state.customRecipes.push({
+            id: 'ai'+Date.now()+Math.random().toString(36).slice(2,6),
+            name: r.name,
+            minutes: r.minutes || 15,
+            ing: (r.ingredients||[]).map(norm),
+            steps: r.steps || [],
+            tag: 'sugerido pela IA',
+            goals: ['geral'],
+            meal: 'Sugestão IA'
+          });
+          saveState(); renderSavedRecipes();
+          btn.textContent = 'Salva ✓'; btn.disabled = true;
+        });
+      });
+    }catch(e){
+      console.error(e);
+      box.innerHTML = '<div class="empty">Não consegui buscar sugestões agora. Confira se o Firebase AI Logic foi ativado no console, ou tente de novo em instantes.</div>';
+    }
+  });
+
+  function renderSavedRecipes(){
+    const box = document.getElementById('savedRecipesCard');
+    if(!box) return;
+    const list = state.customRecipes || [];
+    if(list.length===0){
+      box.innerHTML = '<div class="empty">Nenhuma receita da IA salva ainda — peça uma sugestão acima.</div>';
+      return;
+    }
+    box.innerHTML = list.map(r=>`<div class="recipe">
+      <div class="row1"><span class="name">${r.name}</span><span class="meta">${r.minutes} min</span></div>
+      <div class="eyebrow" style="margin-top:2px;">sugerido pela IA</div>
+      <details><summary>ver modo de preparo</summary><ol>${r.steps.map(s=>`<li>${s}</li>`).join('')}</ol></details>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn small ghost delAiBtn" data-id="${r.id}">Remover</button>
+      </div>
+    </div>`).join('');
+    box.querySelectorAll('.delAiBtn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        state.customRecipes = state.customRecipes.filter(r=>r.id!==btn.dataset.id);
+        saveState(); renderSavedRecipes();
+      });
+    });
+  }
+
   function renderRecipes(){
     const box = document.getElementById('recipeResults');
     if(state.ingredients.length === 0){
@@ -986,7 +1067,8 @@
       return;
     }
     const have = state.ingredients.map(norm);
-    const pool = state.foodGoal === 'abdominal' ? RECIPES.filter(r=>r.goals.includes('abdominal')) : RECIPES;
+    const allRecipes = RECIPES.concat(state.customRecipes || []);
+    const pool = state.foodGoal === 'abdominal' ? allRecipes.filter(r=>r.goals.includes('abdominal')) : allRecipes;
     const scored = pool.map(r=>{
       const matched = r.ing.filter(i => have.some(h => i.includes(h) || h.includes(i)));
       const baseScore = matched.length / r.ing.length;
@@ -1007,6 +1089,7 @@
       const full = missing.length===0;
       return `<div class="recipe">
         <div class="row1"><span class="name">${r.name}</span><span class="meta">${r.minutes} min · ${r.meal}</span></div>
+        ${r.tag ? `<div class="eyebrow" style="margin-top:2px;">${r.tag}</div>` : ''}
         <div class="match ${full?'full':'partial'}">${full ? '✓ você tem tudo' : 'falta: '+missing.join(', ')}</div>
         <details><summary>ver modo de preparo</summary><ol>${r.steps.map(s=>`<li>${s}</li>`).join('')}</ol></details>
         ${recipeActionsBlock(r.id)}
@@ -1734,6 +1817,7 @@
     renderIngredients();
     renderGoalToggle();
     renderBatchRecipes();
+    renderSavedRecipes();
     renderShoppingCard();
     renderCleaning();
     renderPomodoro();
@@ -1749,6 +1833,44 @@
   };
 
 })();
+</script>
+
+<!-- ==================== FIREBASE AI LOGIC (GEMINI) ====================
+     SDK moderno (módulos ES), separado do SDK antigo usado acima para
+     Auth/Firestore. Usa uma instância de app "secundária" pra não
+     conflitar com a instância já inicializada. Não expõe nenhuma chave
+     do Gemini no código — o Firebase cuida disso do lado dele. -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
+  import { initializeAppCheck, ReCaptchaV3Provider } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app-check.js';
+  import { getAI, getGenerativeModel, GoogleAIBackend } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-ai.js';
+
+  try{
+    const aiApp = initializeApp(window.FIREBASE_CONFIG, 'ai-app');
+
+    if(window.RECAPTCHA_SITE_KEY && window.RECAPTCHA_SITE_KEY !== 'COLE_AQUI'){
+      initializeAppCheck(aiApp, {
+        provider: new ReCaptchaV3Provider(window.RECAPTCHA_SITE_KEY),
+        isTokenAutoRefreshEnabled: true
+      });
+    }
+
+    const ai = getAI(aiApp, { backend: new GoogleAIBackend() });
+    const model = getGenerativeModel(ai, { model: 'gemini-3.7-flash' });
+
+    window.askGeminiForRecipes = async function(ingredients, goal){
+      const goalText = goal === 'abdominal'
+        ? 'com foco em reduzir gordura abdominal (priorize proteína, fibra, e evite ultraprocessados/açúcar)'
+        : 'para o dia a dia';
+      const prompt = `Você é um assistente de culinária brasileira. Com base nestes ingredientes disponíveis: ${ingredients.join(', ')}, sugira até 3 receitas realistas e rápidas ${goalText}. Pode incluir 1 ou 2 itens comuns de despensa que a pessoa provavelmente já tem (sal, azeite, temperos básicos), mas priorize os ingredientes informados. Responda APENAS com um JSON válido, sem markdown, sem texto antes ou depois, exatamente neste formato: [{"name":"Nome da receita","minutes":15,"ingredients":["ingrediente1","ingrediente2"],"steps":["passo 1","passo 2"]}]`;
+      const result = await model.generateContent(prompt);
+      let text = result.response.text().trim();
+      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
+      return JSON.parse(text);
+    };
+  }catch(e){
+    console.error('Firebase AI Logic não pôde ser inicializado:', e);
+  }
 </script>
 </body>
 </html>
