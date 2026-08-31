@@ -232,6 +232,22 @@
   nav.tabbar button.active svg{stroke:var(--moss-dark);}
 
   #app{display:none;}
+  .timer-display{
+    font-family:'Fraunces',serif;font-size:52px;font-weight:600;text-align:center;
+    color:var(--ink);letter-spacing:0.02em;margin:6px 0;
+  }
+  .timer-phase{
+    text-align:center;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+    padding:5px 14px;border-radius:999px;display:inline-block;margin:0 auto;
+  }
+  .timer-phase.foco{background:var(--moss-pale);color:var(--moss-dark);}
+  .timer-phase.pausa{background:var(--mustard-pale);color:#7A5A17;}
+  .timer-center{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .timer-sub{font-size:12.5px;color:var(--ink-faint);}
+  select.tselect{
+    width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:11px 12px;font-size:14.5px;font-family:inherit;background:var(--surface);color:var(--ink);
+  }
   #loginGate{
     min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     text-align:center;padding:32px 24px;gap:14px;
@@ -345,11 +361,17 @@
         <button class="btn secondary small" id="addTaskBtn">+ Adicionar tarefa</button>
       </div>
 
+      <div class="section-title">Temporizador Pomodoro (25/5)</div>
+      <div class="card" id="pomodoroCard"></div>
+
       <div class="section-title">Dicas rápidas</div>
       <div class="card" id="cleaningTipsCard"></div>
 
       <div class="section-title">Histórico</div>
       <div class="card" id="cleaningChart"></div>
+
+      <div class="section-title">Tempo por tarefa</div>
+      <div class="card" id="timeHistoryCard"></div>
 
     </section>
 
@@ -416,20 +438,14 @@
 </div>
 
 <!-- ==================== FIREBASE ====================
-     Preencha FIREBASE_CONFIG abaixo com os dados do SEU projeto Firebase.
-     Veja o passo a passo em COMO-PUBLICAR.md para criar o projeto gratuito. -->
+     A configuração real do projeto mora em firebase-config.js (arquivo
+     separado, que você não precisa reenviar toda vez que eu atualizar
+     este index.html). -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 <script>
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyCDQIRBOBmEph8HbOnsxu2jK5MD1nxKAPk",
-    authDomain: "terreno-pp.firebaseapp.com",
-    projectId: "terreno-pp",
-    storageBucket: "terreno-pp.firebasestorage.app",
-    messagingSenderId: "325264560286",
-    appId: "1:325264560286:web:4fd6e1c24edd6edf87eb8f"
-  };
   firebase.initializeApp(FIREBASE_CONFIG);
   const auth = firebase.auth();
   const db = firebase.firestore();
@@ -614,9 +630,10 @@
     recipeFeedback: {},
     shoppingPrefs: null,
     shoppingList: null,
-    cleaning: DEFAULT_TASKS.map((t,i)=>({id:'c'+i, name:t.name, freq:t.freq, lastDone:null, history:[]})),
+    cleaning: DEFAULT_TASKS.map((t,i)=>({id:'c'+i, name:t.name, freq:t.freq, lastDone:null, history:[], durations:[]})),
     habits: DEFAULT_HABITS.map((h,i)=>({id:'h'+i, name:h})),
-    completions: {} // { 'YYYY-MM-DD': { habitId: true } }
+    completions: {}, // { 'YYYY-MM-DD': { habitId: true } }
+    activeTimer: null // { taskId, phase:'foco'|'pausa', phaseEndsAt, pomodorosCompleted, startedAt }
   };
 
   const todayStr = () => new Date().toISOString().slice(0,10);
@@ -637,7 +654,8 @@
     // migração: garantir que toda tarefa de limpeza tenha um array de history
     state.cleaning = (state.cleaning||[]).map(t => ({
       ...t,
-      history: t.history || (t.lastDone ? [t.lastDone] : [])
+      history: t.history || (t.lastDone ? [t.lastDone] : []),
+      durations: t.durations || []
     }));
     renderAll();
   }
@@ -1039,6 +1057,163 @@
   // ---------------------------------------------------------------
   // LIMPEZA
   // ---------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // TEMPORIZADOR POMODORO (25 foco / 5 pausa)
+  // ---------------------------------------------------------------
+  const FOCO_MIN = 25, PAUSA_MIN = 5;
+  let timerInterval = null;
+
+  function beep(){
+    try{
+      const ctx = new (window.AudioContext||window.webkitAudioContext)();
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.16, ctx.currentTime);
+      o.start(); o.stop(ctx.currentTime + 0.35);
+    }catch(e){}
+  }
+
+  function fmtClock(ms){
+    const s = Math.max(0, Math.round(ms/1000));
+    const m = Math.floor(s/60), r = s%60;
+    return String(m).padStart(2,'0') + ':' + String(r).padStart(2,'0');
+  }
+
+  function startPomodoro(taskId){
+    const now = Date.now();
+    state.activeTimer = {
+      taskId,
+      phase: 'foco',
+      phaseEndsAt: now + FOCO_MIN*60000,
+      pomodorosCompleted: 0,
+      startedAt: now
+    };
+    saveState();
+    renderPomodoro();
+    startTicker();
+  }
+
+  function startTicker(){
+    clearInterval(timerInterval);
+    timerInterval = setInterval(()=>{
+      if(!state.activeTimer) { clearInterval(timerInterval); return; }
+      const remaining = state.activeTimer.phaseEndsAt - Date.now();
+      if(remaining <= 0){
+        beep();
+        if(state.activeTimer.phase === 'foco'){
+          state.activeTimer.pomodorosCompleted += 1;
+          state.activeTimer.phase = 'pausa';
+          state.activeTimer.phaseEndsAt = Date.now() + PAUSA_MIN*60000;
+        } else {
+          state.activeTimer.phase = 'foco';
+          state.activeTimer.phaseEndsAt = Date.now() + FOCO_MIN*60000;
+        }
+        saveState();
+      }
+      updateTimerDisplay();
+    }, 1000);
+  }
+
+  function updateTimerDisplay(){
+    const disp = document.getElementById('timerClock');
+    if(!disp || !state.activeTimer) return;
+    disp.textContent = fmtClock(state.activeTimer.phaseEndsAt - Date.now());
+    const phaseEl = document.getElementById('timerPhaseLabel');
+    if(phaseEl){
+      phaseEl.textContent = state.activeTimer.phase === 'foco' ? '🎯 Foco' : '☕ Pausa';
+      phaseEl.className = 'timer-phase ' + state.activeTimer.phase;
+    }
+    const countEl = document.getElementById('timerCount');
+    if(countEl) countEl.textContent = `${state.activeTimer.pomodorosCompleted} pomodoro${state.activeTimer.pomodorosCompleted===1?'':'s'} completo${state.activeTimer.pomodorosCompleted===1?'':'s'}`;
+  }
+
+  function finishPomodoroTask(){
+    const at = state.activeTimer;
+    if(!at) return;
+    const task = state.cleaning.find(t=>t.id===at.taskId);
+    const totalMinutes = Math.max(1, Math.round((Date.now() - at.startedAt)/60000));
+    if(task){
+      task.durations = task.durations || [];
+      task.durations.push({date: todayStr(), minutes: totalMinutes, pomodoros: at.pomodorosCompleted});
+      const today = todayStr();
+      task.history = task.history || [];
+      if(!task.history.includes(today)) task.history.push(today);
+      task.lastDone = today;
+    }
+    state.activeTimer = null;
+    clearInterval(timerInterval);
+    saveState();
+    renderPomodoro(); renderCleaning(); renderHeader(); renderHome();
+  }
+
+  function cancelPomodoro(){
+    state.activeTimer = null;
+    clearInterval(timerInterval);
+    saveState();
+    renderPomodoro();
+  }
+
+  function renderPomodoro(){
+    const card = document.getElementById('pomodoroCard');
+    if(!card) return;
+    const at = state.activeTimer;
+    if(!at){
+      if(state.cleaning.length===0){
+        card.innerHTML = '<div class="empty">Adicione uma tarefa de limpeza primeiro.</div>';
+        return;
+      }
+      card.innerHTML = `
+        <p style="margin-bottom:8px;">Escolha uma tarefa e cuide dela em blocos de 25 min de foco + 5 min de pausa.</p>
+        <select class="tselect" id="pomodoroTaskSelect">
+          ${state.cleaning.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}
+        </select>
+        <div class="btn-row" style="margin-top:10px;">
+          <button class="btn" id="startPomodoroBtn">▶ Iniciar Pomodoro</button>
+        </div>`;
+      document.getElementById('startPomodoroBtn').addEventListener('click', ()=>{
+        const taskId = document.getElementById('pomodoroTaskSelect').value;
+        startPomodoro(taskId);
+      });
+      return;
+    }
+    const task = state.cleaning.find(t=>t.id===at.taskId);
+    card.innerHTML = `
+      <div class="timer-center">
+        <div class="eyebrow">${task ? task.name : 'tarefa'}</div>
+        <div class="timer-phase ${at.phase}" id="timerPhaseLabel">${at.phase==='foco'?'🎯 Foco':'☕ Pausa'}</div>
+        <div class="timer-display" id="timerClock">${fmtClock(at.phaseEndsAt - Date.now())}</div>
+        <div class="timer-sub" id="timerCount">${at.pomodorosCompleted} pomodoro${at.pomodorosCompleted===1?'':'s'} completo${at.pomodorosCompleted===1?'':'s'}</div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="btn small secondary" id="finishPomodoroBtn">Concluir tarefa</button>
+          <button class="btn small ghost" id="cancelPomodoroBtn">Cancelar</button>
+        </div>
+      </div>`;
+    document.getElementById('finishPomodoroBtn').addEventListener('click', finishPomodoroTask);
+    document.getElementById('cancelPomodoroBtn').addEventListener('click', cancelPomodoro);
+    startTicker();
+  }
+
+  function renderTimeHistory(){
+    const box = document.getElementById('timeHistoryCard');
+    if(!box) return;
+    const withTime = state.cleaning.filter(t => t.durations && t.durations.length);
+    if(withTime.length===0){
+      box.innerHTML = '<div class="empty">Use o temporizador em alguma tarefa pra começar a comparar os tempos.</div>';
+      return;
+    }
+    box.innerHTML = withTime.map(t=>{
+      const avg = Math.round(t.durations.reduce((a,d)=>a+d.minutes,0)/t.durations.length);
+      const last = t.durations.slice(-4).reverse().map(d=>d.minutes+'min').join(' · ');
+      return `<div class="task-row">
+        <div class="info">
+          <div class="name">${t.name}</div>
+          <div class="when">média ${avg} min · últimas: ${last}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function renderCleaning(){
     const card = document.getElementById('cleaningCard');
     if(state.cleaning.length===0){
@@ -1092,6 +1267,7 @@
       </div>`).join('');
 
     renderCleaningChart();
+    renderTimeHistory();
   }
 
   function renderCleaningChart(){
@@ -1132,8 +1308,8 @@
     const name = prompt('Nome da nova tarefa:');
     if(!name) return;
     const freq = parseInt(prompt('A cada quantos dias repetir? (ex: 7)', '7')) || 7;
-    state.cleaning.push({id:'c'+Date.now(), name, freq, lastDone:null, history:[]});
-    saveState(); renderCleaning(); renderHome();
+    state.cleaning.push({id:'c'+Date.now(), name, freq, lastDone:null, history:[], durations:[]});
+    saveState(); renderCleaning(); renderHome(); renderPomodoro();
   });
 
   // ---------------------------------------------------------------
@@ -1265,9 +1441,11 @@
     renderBatchRecipes();
     renderShoppingCard();
     renderCleaning();
+    renderPomodoro();
     renderHabits();
     renderTips();
     renderHome();
+    if(state.activeTimer) startTicker();
   }
 
   window.startTerrenoApp = function(){
