@@ -17,5 +17,5 @@ window.FIREBASE_CONFIG = FIREBASE_CONFIG;
 // Chave do reCAPTCHA v3, usada pelo Firebase App Check para proteger
 // o uso da IA (Gemini). Você recebe essa chave ao ativar "AI Logic"
 // no console do Firebase — veja o passo a passo em COMO-PUBLICAR.md.
-const RECAPTCHA_SITE_KEY = "6LeN8KAtAAAAABrts72OKBjv-VCTWfWwJ-YG2QOX";
+const RECAPTCHA_SITE_KEY = "COLE_AQUI";
 window.RECAPTCHA_SITE_KEY = RECAPTCHA_SITE_KEY;

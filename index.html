@@ -1848,12 +1848,17 @@
   try{
     const aiApp = initializeApp(window.FIREBASE_CONFIG, 'ai-app');
 
-    if(window.RECAPTCHA_SITE_KEY && window.RECAPTCHA_SITE_KEY !== 'COLE_AQUI'){
-      initializeAppCheck(aiApp, {
-        provider: new ReCaptchaEnterpriseProvider(window.RECAPTCHA_SITE_KEY),
-        isTokenAutoRefreshEnabled: true
-      });
-    }
+    // Modo de depuração do App Check: mais simples que reCAPTCHA para um
+    // app de uso pessoal. Gera um token fixo que você registra uma vez
+    // no console do Firebase (Segurança > App Check > Apps > ... >
+    // Gerenciar tokens de depuração). Abra o console do navegador (F12)
+    // para ver o token na primeira vez que o app carregar.
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+
+    initializeAppCheck(aiApp, {
+      provider: new ReCaptchaEnterpriseProvider(window.RECAPTCHA_SITE_KEY || 'debug-mode'),
+      isTokenAutoRefreshEnabled: true
+    });
 
     const ai = getAI(aiApp, { backend: new GoogleAIBackend() });
     const model = getGenerativeModel(ai, { model: 'gemini-3.7-flash' });
