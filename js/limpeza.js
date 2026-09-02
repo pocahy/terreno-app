@@ -9,16 +9,6 @@ const CLEANING_TIPS = [
     {name:'Manutenção geral', query:'rotina de limpeza para quem tem TDAH'}
   ];
 
-const DEFAULT_TASKS = [
-    {name:'Louça do dia', freq:1},
-    {name:'Bancada da cozinha', freq:1},
-    {name:'Lixo', freq:2},
-    {name:'Banheiro', freq:7},
-    {name:'Roupa de cama', freq:7},
-    {name:'Passar pano no chão', freq:7},
-    {name:'Geladeira por dentro', freq:30}
-  ];
-
 const FOCO_MIN = 25, PAUSA_MIN = 5;
 
 let timerInterval = null;

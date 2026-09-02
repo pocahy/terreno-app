@@ -2,13 +2,6 @@
 // REMÉDIOS: doses diárias, adesão semanal e calendário anual.
 // ============================================================
 
-const DEFAULT_MEDS = [
-    {name:'Ritalina LA', dose:'20mg', timesPerDay:1},
-    {name:'Elifore', dose:'100mg', timesPerDay:1},
-    {name:'Ativ B', dose:'1000mcg', timesPerDay:1},
-    {name:'Vitamina D3', dose:'5.000 UI', timesPerDay:1}
-  ];
-
 function medDosesToday(medId){
     const t = todayStr();
     const arr = (state.medCompletions[t] || {})[medId];

@@ -4,12 +4,6 @@
 
 const POINTS = { habit:2, med:2, cleaning:5, pomodoro:3, aiRecipeSave:3 };
 
-const DEFAULT_REWARDS = [
-    {name:'Pedir um iFood', cost:150},
-    {name:'Um fim de semana diferente', cost:500},
-    {name:'Viagem de férias', cost:3000}
-  ];
-
 function addPoints(amount, reason){
     state.points = Math.max(0, (state.points||0) + amount);
     state.pointsLog = state.pointsLog || [];

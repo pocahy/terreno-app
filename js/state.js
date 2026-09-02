@@ -24,6 +24,38 @@ window.storage = {
     }
   };
 
+const DEFAULT_TASKS = [
+    {name:'Louça do dia', freq:1},
+    {name:'Bancada da cozinha', freq:1},
+    {name:'Lixo', freq:2},
+    {name:'Banheiro', freq:7},
+    {name:'Roupa de cama', freq:7},
+    {name:'Passar pano no chão', freq:7},
+    {name:'Geladeira por dentro', freq:30}
+  ];
+
+const DEFAULT_REWARDS = [
+    {name:'Pedir um iFood', cost:150},
+    {name:'Um fim de semana diferente', cost:500},
+    {name:'Viagem de férias', cost:3000}
+  ];
+
+const DEFAULT_MEDS = [
+    {name:'Ritalina LA', dose:'20mg', timesPerDay:1},
+    {name:'Elifore', dose:'100mg', timesPerDay:1},
+    {name:'Ativ B', dose:'1000mcg', timesPerDay:1},
+    {name:'Vitamina D3', dose:'5.000 UI', timesPerDay:1}
+  ];
+
+const DEFAULT_HABITS = [
+    'Tomar água',
+    'Tomar a medicação',
+    'Pegar um pouco de sol / sair de casa',
+    'Movimento (mesmo 10 min)',
+    'Higiene básica em dia',
+    'Um cômodo arrumado'
+  ];
+
 let state = {
     ingredients: [],
     foodGoal: 'geral',

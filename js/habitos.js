@@ -2,15 +2,6 @@
 // HÁBITOS: contagem semanal e registro diário.
 // ============================================================
 
-const DEFAULT_HABITS = [
-    'Tomar água',
-    'Tomar a medicação',
-    'Pegar um pouco de sol / sair de casa',
-    'Movimento (mesmo 10 min)',
-    'Higiene básica em dia',
-    'Um cômodo arrumado'
-  ];
-
 function weekCount(habitId){
     let count=0;
     for(let i=0;i<7;i++){
