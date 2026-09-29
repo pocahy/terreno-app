@@ -261,3 +261,17 @@ function saveState(){
       if(pendingResave){ pendingResave = false; saveState(); }
     }, 250);
   }
+
+
+// Mensagem clara para falhas da IA (Gemini), com o motivo real
+function aiErrorHTML(e, what){
+    const msg = (e && e.message) || '';
+    let txt;
+    if(!window.terrenoAIReady) txt = 'A IA ainda não carregou neste aparelho. Aguarde alguns segundos e tente de novo.';
+    else if(/app check|appcheck|401|403/i.test(msg)) txt = 'Este aparelho não está autorizado a usar a IA. Vá em Mais → Dicas → "Ver código deste aparelho" e cadastre o código no Firebase (App Check → Gerenciar tokens de depuração).';
+    else if(e && e.code === 'formato') txt = 'A IA respondeu num formato que não consegui ler. Tente de novo.';
+    else if(/quota|429|resource.?exhausted/i.test(msg)) txt = 'Limite de uso gratuito da IA atingido por agora. Tente de novo mais tarde.';
+    else if(/network|failed to fetch/i.test(msg)) txt = 'Sem conexão com a internet no momento.';
+    else txt = 'Não consegui ' + (what||'falar com a IA') + ' agora.';
+    return `<div class="empty" style="padding:14px;">${txt}<div style="font-size:11px;margin-top:6px;opacity:.8;">Detalhe técnico: ${(e && e.code) || ''} ${msg.slice(0,160)}</div></div>`;
+  }

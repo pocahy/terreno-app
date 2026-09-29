@@ -245,7 +245,7 @@ document.getElementById('genDayMenuBtn').addEventListener('click', async ()=>{
       });
     }catch(e){
       console.error(e);
-      box.innerHTML = '<div class="empty">Não consegui montar o cardápio agora. Tente de novo em instantes.</div>';
+      box.innerHTML = aiErrorHTML(e, 'montar o cardápio');
     }
   });
 
@@ -305,7 +305,7 @@ document.getElementById('genWeekMenuBtn').addEventListener('click', async ()=>{
       });
     }catch(e){
       console.error(e);
-      box.innerHTML = '<div class="empty">Não consegui montar o cardápio agora. Tente de novo em instantes.</div>';
+      box.innerHTML = aiErrorHTML(e, 'montar o cardápio');
     }
   });
 
@@ -356,7 +356,7 @@ document.getElementById('askAiBtn').addEventListener('click', async ()=>{
       });
     }catch(e){
       console.error(e);
-      box.innerHTML = '<div class="empty">Não consegui buscar sugestões agora. Confira se o Firebase AI Logic foi ativado no console, ou tente de novo em instantes.</div>';
+      box.innerHTML = aiErrorHTML(e, 'buscar sugestões');
     }
   });
 

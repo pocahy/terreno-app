@@ -35,16 +35,41 @@
 
     const ai = getAI(aiApp, { backend: new GoogleAIBackend() });
     const model = getGenerativeModel(ai, { model: 'gemini-3.7-flash' });
+    // Modelo configurado pra responder SEMPRE em JSON puro (evita texto
+    // extra ou markdown em volta, que quebrava a leitura das respostas)
+    const jsonModel = getGenerativeModel(ai, { model: 'gemini-3.7-flash', generationConfig: { responseMimeType: 'application/json' } });
+
+    function parseAIJson(text){
+      text = (text||'').trim().replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
+      try{ return JSON.parse(text); }catch(e){
+        const m = text.match(/[\[{][\s\S]*[\]}]/);
+        if(m){ try{ return JSON.parse(m[0]); }catch(_){} }
+        const err = new Error('A IA respondeu num formato inesperado: ' + text.slice(0,120));
+        err.code = 'formato'; throw err;
+      }
+    }
+
+    function asArray(x, keys){
+      if(Array.isArray(x)) return x;
+      if(x && typeof x === 'object'){
+        for(const k of keys.concat(Object.keys(x))){ if(Array.isArray(x[k])) return x[k]; }
+      }
+      return [];
+    }
+
+    async function askJson(prompt){
+      const result = await jsonModel.generateContent(prompt);
+      return parseAIJson(result.response.text());
+    }
+
+    window.terrenoAIReady = true;
 
     window.askGeminiForRecipes = async function(ingredients, goal){
       const goalText = goal === 'abdominal'
         ? 'com foco em reduzir gordura abdominal (priorize proteína, fibra, e evite ultraprocessados/açúcar)'
         : 'para o dia a dia';
       const prompt = `Você é um assistente de culinária brasileira. Com base nestes ingredientes disponíveis: ${ingredients.join(', ')}, sugira até 3 receitas realistas e rápidas ${goalText}. Pode incluir 1 ou 2 itens comuns de despensa que a pessoa provavelmente já tem (sal, azeite, temperos básicos), mas priorize os ingredientes informados. Para cada ingrediente, informe a quantidade estimada (ex: "200g", "2 unidades", "1 xícara"). Estime também quantas porções a receita rende e as calorias aproximadas por porção. Responda APENAS com um JSON válido, sem markdown, sem texto antes ou depois, exatamente neste formato: [{"name":"Nome da receita","minutes":15,"servings":2,"calories_per_serving":420,"ingredients":[{"item":"peito de frango","amount":"200g"}],"steps":["passo 1","passo 2"]}]. Os valores de calorias e porções são estimativas aproximadas, não medições exatas — isso deve ficar implícito, não precisa declarar isso no JSON.`;
-      const result = await model.generateContent(prompt);
-      let text = result.response.text().trim();
-      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
-      return JSON.parse(text);
+      return await askJson(prompt);
     };
 
     window.askGeminiForDayMenu = async function(goal){
@@ -52,10 +77,7 @@
         ? 'com foco em reduzir gordura abdominal (priorize proteína, fibra, evite ultraprocessados/açúcar)'
         : 'equilibrado para o dia a dia';
       const prompt = `Você é um assistente de culinária brasileira. Monte um cardápio realista para 1 dia (café da manhã, almoço, lanche da tarde e jantar), ${goalText}. Para cada refeição, informe o prato, tempo de preparo, quantas porções rende, calorias estimadas por porção, ingredientes com quantidade, e o modo de preparo. Responda APENAS com um JSON válido, sem markdown, exatamente neste formato: [{"slot":"Café da manhã","name":"Nome do prato","minutes":10,"servings":1,"calories_per_serving":350,"ingredients":[{"item":"ovo","amount":"2 unidades"}],"steps":["passo 1"]}, {"slot":"Almoço", ...}, {"slot":"Lanche da tarde", ...}, {"slot":"Jantar", ...}]`;
-      const result = await model.generateContent(prompt);
-      let text = result.response.text().trim();
-      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
-      return JSON.parse(text);
+      return await askJson(prompt);
     };
 
     window.askGeminiForWeekMenu = async function(goal){
@@ -63,19 +85,13 @@
         ? 'com foco em reduzir gordura abdominal (priorize proteína, fibra, evite ultraprocessados/açúcar)'
         : 'equilibrado, variado, para o dia a dia';
       const prompt = `Você é um assistente de culinária brasileira. Monte um cardápio realista para 7 dias (domingo a sábado), ${goalText}, com variedade entre os dias (evite repetir o mesmo prato). Para cada dia, informe café da manhã, almoço, lanche da tarde e jantar — apenas o nome do prato e o tempo de preparo em minutos, sem detalhes de ingredientes ou modo de preparo nessa etapa. Responda APENAS com um JSON válido, sem markdown, exatamente neste formato: [{"day":"Domingo","meals":[{"slot":"Café da manhã","name":"Nome do prato","minutes":10}, {"slot":"Almoço","name":"...","minutes":25}, {"slot":"Lanche da tarde","name":"...","minutes":5}, {"slot":"Jantar","name":"...","minutes":20}]}, {"day":"Segunda", ...}]`;
-      const result = await model.generateContent(prompt);
-      let text = result.response.text().trim();
-      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
-      return JSON.parse(text);
+      return await askJson(prompt);
     };
 
     window.askGeminiForDishDetail = async function(dishName, goal){
       const goalText = goal === 'abdominal' ? 'com foco em reduzir gordura abdominal' : 'para o dia a dia';
       const prompt = `Você é um assistente de culinária brasileira. Dê a receita completa e realista do prato "${dishName}" ${goalText}. Informe tempo de preparo, quantas porções rende, calorias estimadas por porção, ingredientes com quantidade, e o modo de preparo passo a passo. Responda APENAS com um JSON válido, sem markdown, exatamente neste formato: {"name":"${dishName}","minutes":15,"servings":2,"calories_per_serving":400,"ingredients":[{"item":"...","amount":"..."}],"steps":["passo 1","passo 2"]}`;
-      const result = await model.generateContent(prompt);
-      let text = result.response.text().trim();
-      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
-      return JSON.parse(text);
+      return await askJson(prompt);
     };
 
     window.askGeminiForTomorrowPlan = async function(tomorrowEvents, learningGoals, opts){
@@ -107,10 +123,7 @@ Regras:
 6. Inclua blocos de transição/descanso entre atividades, e reserve espaço para pelo menos uma atividade que costuma fazer bem à pessoa.
 7. Inclua exposição à luz natural logo depois de acordar.
 Responda APENAS com um JSON válido, sem markdown, exatamente neste formato: [{"time":"07:00","title":"Título curto","type":"compromisso ou estudo ou descanso ou movimento","detail":"detalhe opcional"}]`;
-      const result = await model.generateContent(prompt);
-      let text = result.response.text().trim();
-      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
-      return JSON.parse(text);
+      return asArray(await askJson(prompt), ['blocks','plano','agenda','items']);
     };
 
     window.askGeminiToSortInbox = async function(items){
@@ -126,10 +139,7 @@ Reescreva cada item como um título curto e acionável (máx. 8 palavras), come�
 Itens:
 [${list}]
 Responda APENAS com um JSON válido, sem markdown: [{"id":"...","category":"limpeza|compra|estudo|habito|tarefa|nota","title":"..."}]`;
-      const result = await model.generateContent(prompt);
-      let text = result.response.text().trim();
-      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
-      return JSON.parse(text);
+      return asArray(await askJson(prompt), ['items','itens']);
     };
   }catch(e){
     console.error('Firebase AI Logic não pôde ser inicializado:', e);

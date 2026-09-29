@@ -122,7 +122,7 @@ async function sortInboxWithAI(){
     if(m2) m2.textContent = 'Confira as sugestões e toque em "mandar pra lá" nas que fizerem sentido.';
   }catch(e){
     console.error(e);
-    msg.textContent = 'Não consegui organizar agora. Tente de novo em instantes.';
+    msg.innerHTML = aiErrorHTML(e, 'organizar');
   }
 }
 

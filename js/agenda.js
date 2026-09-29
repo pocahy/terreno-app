@@ -276,7 +276,7 @@ document.getElementById('genTomorrowPlanBtn').addEventListener('click', async ()
   const box = document.getElementById('tomorrowPlanResults');
   box.innerHTML = '<div class="empty">Montando o plano de amanhã...</div>';
   try{
-    if(!window.askGeminiForTomorrowPlan) throw new Error('IA ainda não configurada.');
+    if(!window.askGeminiForTomorrowPlan) throw new Error('IA ainda não carregada');
     const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate()+1); return localDateStr(d); })();
     const tomorrowEvents = (state.calendarEvents && state.calendarEvents.events || [])
       .filter(ev => (ev.start||'').slice(0,10) === tomorrow);
@@ -297,7 +297,7 @@ document.getElementById('genTomorrowPlanBtn').addEventListener('click', async ()
     renderTomorrowPlan();
   }catch(e){
     console.error(e);
-    box.innerHTML = '<div class="empty">Não consegui montar o plano agora. Tente de novo em instantes.</div>';
+    box.innerHTML = aiErrorHTML(e, 'montar o plano');
   }
 });
 
