@@ -18,7 +18,12 @@ async function getCalendarToken(force){
   // fechar sozinha, reaproveitando o login antigo que não incluía a Agenda)
   provider.setCustomParameters({ prompt:'consent', include_granted_scopes:'true', login_hint: (auth.currentUser && auth.currentUser.email) || '' });
   const result = await auth.currentUser.reauthenticateWithPopup(provider);
-  const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+  // No SDK "compat" (o que o app usa) o token vem em result.credential;
+  // credentialFromResult é da API modular e aqui devolve vazio.
+  let credential = result && result.credential;
+  if(!credential || !credential.accessToken){
+    try{ credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result); }catch(_){}
+  }
   if(!credential || !credential.accessToken){
     const err = new Error('O Google não devolveu o acesso à Agenda.'); err.code = 'sem-token'; throw err;
   }
