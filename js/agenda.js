@@ -14,10 +14,42 @@ async function getCalendarToken(force){
   if(googleCalendarToken && !force) return googleCalendarToken;
   const provider = new firebase.auth.GoogleAuthProvider();
   CAL_SCOPES.forEach(sc => provider.addScope(sc));
+  // Força a tela de permissões do Google (sem isso a janela pode abrir e
+  // fechar sozinha, reaproveitando o login antigo que não incluía a Agenda)
+  provider.setCustomParameters({ prompt:'consent', include_granted_scopes:'true', login_hint: (auth.currentUser && auth.currentUser.email) || '' });
   const result = await auth.currentUser.reauthenticateWithPopup(provider);
   const credential = firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+  if(!credential || !credential.accessToken){
+    const err = new Error('O Google não devolveu o acesso à Agenda.'); err.code = 'sem-token'; throw err;
+  }
+  // Confere quais permissões o Google realmente concedeu (a tela de
+  // permissões tem caixinhas — se uma ficar desmarcada, a Agenda falha)
+  try{
+    const info = await (await fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + credential.accessToken)).json();
+    const granted = (info.scope || '').split(' ');
+    const missing = CAL_SCOPES.filter(sc => !granted.includes(sc));
+    if(missing.length){
+      const err = new Error('Permissões não marcadas: ' + missing.map(m=>m.split('/').pop()).join(', '));
+      err.code = 'permissao-desmarcada'; throw err;
+    }
+  }catch(e){ if(e.code === 'permissao-desmarcada') throw e; }
   googleCalendarToken = credential.accessToken;
   return googleCalendarToken;
+}
+
+function calendarErrorMessage(e){
+  const code = (e && e.code) || '';
+  const map = {
+    'auth/popup-closed-by-user': 'A janela do Google fechou antes de terminar. Tente de novo e, se aparecer a lista de contas, escolha a mesma conta do login do Terreno.',
+    'auth/cancelled-popup-request': 'Abriu mais de uma janela ao mesmo tempo. Toque no botão só uma vez e aguarde.',
+    'auth/popup-blocked': 'O navegador bloqueou a janela. Libere pop-ups para pocahy.github.io e tente de novo.',
+    'auth/user-mismatch': 'Você escolheu uma conta Google diferente da que está logada no Terreno. Use a mesma conta.',
+    'auth/unauthorized-domain': 'Domínio não autorizado no Firebase (Authentication → Configurações → Domínios autorizados).',
+    'permissao-desmarcada': 'Na tela de permissões do Google, marque as duas caixinhas da Agenda (ver agenda e gerenciar o calendário do app).',
+    'sem-token': 'O Google não devolveu o acesso à Agenda. Tente de novo.'
+  };
+  const txt = map[code] || 'Não consegui conectar agora.';
+  return `<p>${txt}</p><p style="font-size:11.5px;color:var(--ink-faint);margin-top:4px;">Detalhe técnico: ${code || ''} ${(e && e.message) || ''}</p>`;
 }
 
 async function calApi(method, path, body){
@@ -90,7 +122,7 @@ async function syncRemindersToCalendar(){
     say(`${ids.length} lembretes diários criados no calendário "Terreno" ✓ — eles tocam pelo app do Google Agenda, mesmo com o Terreno fechado.`);
   }catch(e){
     console.error(e);
-    say('Não consegui criar os lembretes agora. Tente de novo — se pedir permissão, aceite o acesso à Agenda.');
+    say('Não consegui criar os lembretes: ' + ((e && e.message) || 'erro desconhecido'));
   }
 }
 
@@ -119,7 +151,7 @@ async function sendPlanToCalendar(){
     say(`${ids.length} blocos enviados ao calendário "Terreno", com aviso no horário de cada um ✓`);
   }catch(e){
     console.error(e);
-    say('Não consegui enviar agora. Tente de novo.');
+    say('Não consegui enviar: ' + ((e && e.message) || 'erro desconhecido'));
   }
 }
 
@@ -131,7 +163,7 @@ document.getElementById('connectCalendarBtn').addEventListener('click', async ()
     await fetchCalendarEvents();
   }catch(e){
     console.error(e);
-    statusBox.innerHTML = '<p>Não consegui conectar agora. Tente de novo — se aparecer um aviso de "app não verificado", isso é esperado (é seu próprio app), pode continuar.</p>';
+    statusBox.innerHTML = calendarErrorMessage(e);
   }
 });
 
@@ -147,7 +179,13 @@ async function fetchCalendarEvents(){
     const timeMax = new Date(timeMin); timeMax.setDate(timeMax.getDate()+2); // hoje + amanhã
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin.toISOString()}&timeMax=${timeMax.toISOString()}&singleEvents=true&orderBy=startTime`;
     const res = await fetch(url, { headers: { Authorization: 'Bearer ' + googleCalendarToken } });
-    if(!res.ok) throw new Error('Calendar API respondeu ' + res.status);
+    if(!res.ok){
+      let detail = '';
+      try{ const j = await res.json(); detail = (j.error && j.error.message) || ''; }catch(_){}
+      const err = new Error('Agenda respondeu ' + res.status + (detail ? ': ' + detail : ''));
+      err.code = 'calendar-' + res.status;
+      throw err;
+    }
     const data = await res.json();
     const events = (data.items||[]).map(ev => ({
       summary: ev.summary || '(sem título)',
@@ -161,7 +199,9 @@ async function fetchCalendarEvents(){
     renderCalendarEvents();
   }catch(e){
     console.error(e);
-    statusBox.innerHTML = '<p>Não consegui buscar os compromissos agora. Toque em "Conectar/Atualizar" pra tentar de novo.</p>';
+    const hint = /has not been used|disabled/i.test(e.message||'') ? 'A Google Calendar API parece desativada no projeto terreno-pp (APIs e serviços → Biblioteca → Google Calendar API → Ativar).'
+      : (e.code==='calendar-403' ? 'O Google negou o acesso à Agenda — tente conectar de novo e marque todas as caixinhas de permissão.' : 'Não consegui buscar os compromissos agora.');
+    statusBox.innerHTML = `<p>${hint}</p><p style="font-size:11.5px;color:var(--ink-faint);margin-top:4px;">Detalhe técnico: ${e.message||''}</p>`;
   }
 }
 
