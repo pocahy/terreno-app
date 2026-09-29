@@ -19,6 +19,30 @@ function toggleMedDose(medId, idx, timesPerDay){
     saveState(); renderMeds(); renderHeader(); renderHome(); renderRewards();
   }
 
+function askMedTimes(n, current){
+    const raw = prompt(`Horário${n>1?'s (separados por vírgula)':''} — ex: ${defaultMedTimes(n).join(', ')}`, current.join(', '));
+    if(raw===null) return current;
+    const parsed = raw.split(',').map(x=>x.trim()).filter(x=>/^\d{1,2}:\d{2}$/.test(x)).map(x=>x.padStart(5,'0'));
+    return parsed.length===n ? parsed : current;
+  }
+
+function editMed(id){
+    const m = state.medications.find(x=>x.id===id);
+    if(!m) return;
+    const name = prompt('Nome (deixe vazio para remover):', m.name);
+    if(name===null) return;
+    if(name.trim()===''){
+      if(confirm('Remover '+m.name+'?')){ state.medications = state.medications.filter(x=>x.id!==id); saveState(); renderMeds(); renderHome(); renderHeader(); }
+      return;
+    }
+    m.name = name.trim();
+    m.dose = prompt('Dose:', m.dose) ?? m.dose;
+    const n = parseInt(prompt('Quantas vezes ao dia?', m.timesPerDay)) || m.timesPerDay;
+    if(n !== m.timesPerDay){ m.timesPerDay = n; m.times = defaultMedTimes(n); }
+    m.times = askMedTimes(n, m.times);
+    saveState(); renderMeds(); renderHome(); renderHeader();
+  }
+
 function renderMeds(){
     const card = document.getElementById('medsCard');
     if(!card) return;
@@ -34,11 +58,12 @@ function renderMeds(){
         return `<div class="med-row">
           <div style="flex:1;">
             <div class="name">${m.name}</div>
-            <div class="dose">${m.dose}${m.timesPerDay>1?` · ${m.timesPerDay}x ao dia`:''}</div>
+            <div class="dose">${m.dose} · ${(m.times||[]).join(', ')} · <button class="linkbtn" data-editmed="${m.id}">editar</button></div>
           </div>
           <div class="dose-dots">${dots}</div>
         </div>`;
       }).join('');
+      card.querySelectorAll('[data-editmed]').forEach(b=> b.addEventListener('click', ()=> editMed(b.dataset.editmed)));
       card.querySelectorAll('.dose-dot').forEach(dot=>{
         dot.addEventListener('click', ()=>{
           const med = state.medications.find(m=>m.id===dot.dataset.med);
@@ -57,7 +82,7 @@ function getWeekDates(){
     const sunday = new Date(now); sunday.setDate(now.getDate() - dow);
     return Array.from({length:7}, (_,i)=>{
       const d = new Date(sunday); d.setDate(sunday.getDate()+i);
-      return d.toISOString().slice(0,10);
+      return localDateStr(d);
     });
   }
 
@@ -133,7 +158,7 @@ function renderYearCalendar(){
       }
       monthLabels.push(label);
       const cells = week.map(d=>{
-        const ds = d.toISOString().slice(0,10);
+        const ds = localDateStr(d);
         if(d.getFullYear() !== year) return `<div class="cal-day" style="background:transparent;"></div>`;
         if(ds > today) return `<div class="cal-day future"></div>`;
         const status = medDayStatus(ds);
@@ -185,6 +210,7 @@ document.getElementById('addMedBtn').addEventListener('click', ()=>{
     if(!name) return;
     const dose = prompt('Dose (ex: 20mg):', '') || '';
     const timesPerDay = parseInt(prompt('Quantas vezes ao dia?', '1')) || 1;
-    state.medications.push({id:'m'+Date.now(), name, dose, timesPerDay});
+    const times = askMedTimes(timesPerDay, defaultMedTimes(timesPerDay));
+    state.medications.push({id:'m'+Date.now(), name, dose, timesPerDay, times});
     saveState(); renderMeds(); renderHome();
   });

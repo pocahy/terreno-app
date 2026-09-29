@@ -1,7 +1,8 @@
 // ============================================================
 // FIREBASE AI LOGIC (GEMINI): módulo ES separado, pois usa import.
 // Define window.askGeminiForRecipes, askGeminiForDayMenu,
-// askGeminiForWeekMenu e askGeminiForDishDetail, usados por comida.js.
+// askGeminiForWeekMenu, askGeminiForDishDetail (comida.js),
+// askGeminiForTomorrowPlan (agenda.js) e askGeminiToSortInbox (inbox.js).
 // ============================================================
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js';
   import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'https://www.gstatic.com/firebasejs/12.9.0/firebase-app-check.js';
@@ -71,6 +72,60 @@
     window.askGeminiForDishDetail = async function(dishName, goal){
       const goalText = goal === 'abdominal' ? 'com foco em reduzir gordura abdominal' : 'para o dia a dia';
       const prompt = `Você é um assistente de culinária brasileira. Dê a receita completa e realista do prato "${dishName}" ${goalText}. Informe tempo de preparo, quantas porções rende, calorias estimadas por porção, ingredientes com quantidade, e o modo de preparo passo a passo. Responda APENAS com um JSON válido, sem markdown, exatamente neste formato: {"name":"${dishName}","minutes":15,"servings":2,"calories_per_serving":400,"ingredients":[{"item":"...","amount":"..."}],"steps":["passo 1","passo 2"]}`;
+      const result = await model.generateContent(prompt);
+      let text = result.response.text().trim();
+      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
+      return JSON.parse(text);
+    };
+
+    window.askGeminiForTomorrowPlan = async function(tomorrowEvents, learningGoals, opts){
+      opts = opts || {};
+      const wake = opts.wakeTime || '07:00', wind = opts.windDownTime || '22:30';
+      const eventsText = tomorrowEvents.length
+        ? tomorrowEvents.map(ev => `${ev.allDay ? 'dia todo' : new Date(ev.start).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}: ${ev.summary}`).join('; ')
+        : 'nenhum compromisso registrado';
+      const goalsText = learningGoals.length
+        ? learningGoals.map(g => g.name + (g.notes ? ` (${g.notes})` : '')).join(', ')
+        : 'nenhum tema cadastrado';
+      const energyText = opts.energy == null ? 'não informada'
+        : opts.energy < 1.8 ? 'baixa nos últimos dias — monte um dia MAIS LEVE, com menos blocos de estudo (no máximo 2), blocos curtos de 20-25 min e mais descanso'
+        : opts.energy < 2.8 ? 'média' : 'boa';
+      const pleasureText = (opts.pleasure && opts.pleasure.length) ? opts.pleasure.join(', ') : 'nenhuma registrada ainda';
+      const cuesText = (opts.cues && opts.cues.length) ? opts.cues.join('; ') : 'nenhum';
+      const prompt = `Você é um assistente de planejamento diário para uma pessoa adulta com TDAH e depressão em tratamento. Seja realista e gentil, sem sobrecarregar.
+Compromissos já marcados para amanhã: ${eventsText}.
+Temas que a pessoa quer aprender: ${goalsText}.
+Energia recente: ${energyText}.
+Atividades que costumam fazer bem à pessoa: ${pleasureText}.
+Rotinas âncora já existentes (gatilhos): ${cuesText}.
+Regras:
+1. O dia começa no horário fixo de acordar (${wake}) e o último bloco termina no horário de desacelerar (${wind}). Não agende estudo nos 60 min antes de ${wind}.
+2. Inclua os compromissos já marcados nos horários exatos.
+3. Preencha intervalos livres com blocos curtos de estudo (25 a 45 min, estilo pomodoro), revezando os temas entre os dias em vez de todos no mesmo dia. Cada bloco de estudo deve ter um foco concreto e progressivo (o próximo passo de um cronograma), não genérico.
+4. No campo "detail" de cada bloco de estudo, comece com um plano no formato "Quando [gatilho concreto], então [primeiro passo pequeno]" e depois o foco do dia.
+5. Antes dos blocos de estudo mais exigentes, inclua 5 a 10 minutos de movimento (tipo "movimento").
+6. Inclua blocos de transição/descanso entre atividades, e reserve espaço para pelo menos uma atividade que costuma fazer bem à pessoa.
+7. Inclua exposição à luz natural logo depois de acordar.
+Responda APENAS com um JSON válido, sem markdown, exatamente neste formato: [{"time":"07:00","title":"Título curto","type":"compromisso ou estudo ou descanso ou movimento","detail":"detalhe opcional"}]`;
+      const result = await model.generateContent(prompt);
+      let text = result.response.text().trim();
+      text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');
+      return JSON.parse(text);
+    };
+
+    window.askGeminiToSortInbox = async function(items){
+      const list = items.map(it => `{"id":"${it.id}","texto":${JSON.stringify(it.text)}}`).join(',\n');
+      const prompt = `Você organiza uma "caixa de entrada" de pensamentos soltos de uma pessoa com TDAH. Para cada item, escolha UMA categoria:
+- "limpeza": tarefa doméstica/de casa
+- "compra": algo a comprar
+- "estudo": tema que a pessoa quer aprender
+- "habito": algo que a pessoa quer fazer todo dia
+- "tarefa": outra tarefa pontual (trabalho, burocracia, ligação, etc.)
+- "nota": ideia, lembrança ou preocupação que não é ação
+Reescreva cada item como um título curto e acionável (máx. 8 palavras), começando por verbo quando for ação.
+Itens:
+[${list}]
+Responda APENAS com um JSON válido, sem markdown: [{"id":"...","category":"limpeza|compra|estudo|habito|tarefa|nota","title":"..."}]`;
       const result = await model.generateContent(prompt);
       let text = result.response.text().trim();
       text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'');

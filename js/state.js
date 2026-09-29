@@ -48,12 +48,35 @@ const DEFAULT_MEDS = [
   ];
 
 const DEFAULT_HABITS = [
-    'Tomar água',
-    'Tomar a medicação',
-    'Pegar um pouco de sol / sair de casa',
-    'Movimento (mesmo 10 min)',
-    'Higiene básica em dia',
-    'Um cômodo arrumado'
+    {name:'Tomar água', cue:'eu sentar pra trabalhar'},
+    {name:'Tomar a medicação', cue:'eu servir o café da manhã'},
+    {name:'Luz natural nos primeiros 30 min do dia', cue:'eu acordar'},
+    {name:'Movimento (mesmo 10 min)', cue:''},
+    {name:'Higiene básica em dia', cue:''},
+    {name:'Um cômodo arrumado', cue:''}
+  ];
+
+const SMALL_REWARDS = [
+    {name:'Um café especial', cost:30},
+    {name:'Um episódio sem culpa', cost:40}
+  ];
+
+const DEFAULT_SETTINGS = {
+    wakeTime:'07:00', windDownTime:'22:30', caffeineCutoff:'14:00',
+    notificationsOn:false, focoMin:25, pausaMin:5
+  };
+
+function defaultMedTimes(n){
+    if(n<=1) return ['08:00'];
+    if(n===2) return ['08:00','20:00'];
+    if(n===3) return ['08:00','14:00','20:00'];
+    return Array.from({length:n},(_,i)=>String(8+Math.floor(i*12/(n-1))).padStart(2,'0')+':00');
+  }
+
+const DEFAULT_LEARNING_GOALS = [
+    {name:'Inglês', notes:''},
+    {name:'Programar em Python', notes:''},
+    {name:'Estatística', notes:''}
   ];
 
 let state = {
@@ -63,25 +86,56 @@ let state = {
     customRecipes: [], // receitas sugeridas pela IA e salvas pelo usuário
     points: 0,
     pointsLog: [], // { date, amount, reason }
-    rewards: DEFAULT_REWARDS.map((r,i)=>({id:'rw'+i, name:r.name, cost:r.cost})),
+    rewards: SMALL_REWARDS.concat(DEFAULT_REWARDS).map((r,i)=>({id:'rw'+i, name:r.name, cost:r.cost})),
     redemptions: [], // { id, name, cost, date }
     shoppingPrefs: null,
     shoppingList: null,
     cleaning: DEFAULT_TASKS.map((t,i)=>({id:'c'+i, name:t.name, freq:t.freq, lastDone:null, history:[], durations:[]})),
-    habits: DEFAULT_HABITS.map((h,i)=>({id:'h'+i, name:h})),
-    medications: DEFAULT_MEDS.map((m,i)=>({id:'m'+i, name:m.name, dose:m.dose, timesPerDay:m.timesPerDay})),
+    habits: DEFAULT_HABITS.map((h,i)=>({id:'h'+i, name:h.name, cue:h.cue})),
+    medications: DEFAULT_MEDS.map((m,i)=>({id:'m'+i, name:m.name, dose:m.dose, timesPerDay:m.timesPerDay, times:defaultMedTimes(m.timesPerDay)})),
     medCompletions: {}, // { 'YYYY-MM-DD': { medId: [true,false,...] } }
     completions: {}, // { 'YYYY-MM-DD': { habitId: true } }
-    activeTimer: null // { taskId, phase:'foco'|'pausa', phaseEndsAt, pomodorosCompleted, startedAt }
+    activeTimer: null, // { taskId, phase:'foco'|'pausa', phaseEndsAt, pomodorosCompleted, startedAt }
+    learningGoals: DEFAULT_LEARNING_GOALS.map((g,i)=>({id:'lg'+i, name:g.name, notes:g.notes})),
+    calendarEvents: null, // { fetchedAt, events: [...] } — cache da última busca no Google Calendar
+    tomorrowPlan: null, // { generatedAt, forDate, blocks: [...] }
+    settings: Object.assign({}, DEFAULT_SETTINGS),
+    energyLog: {},      // { 'YYYY-MM-DD': 1..4 }
+    feelings: {},       // { 'YYYY-MM-DD': { habitId: 'prazer'|'conquista' } }
+    inbox: [],          // { id, text, createdAt, status:'novo'|'nota' }
+    lastOpened: null,
+    welcomeBack: null,  // { gap, date, dismissed }
+    showFullDay: null,  // data em que a pessoa pediu pra ver o dia completo mesmo com energia baixa
+    terrenoCalendarId: null,
+    syncedReminderIds: [],
+    planSyncedIds: [],
+    migrations: {}
   };
 
-const todayStr = () => new Date().toISOString().slice(0,10);
+function localDateStr(d){
+    d = d || new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+
+function parseLocalDate(s){
+    const [y,m,d] = s.split('-').map(Number);
+    return new Date(y, m-1, d);
+  }
+
+const todayStr = () => localDateStr(new Date());
 
 const daysSince = (dateStr) => {
     if(!dateStr) return Infinity;
-    const diff = (Date.now() - new Date(dateStr).getTime()) / 86400000;
-    return Math.floor(diff);
+    return Math.round((parseLocalDate(todayStr()) - parseLocalDate(dateStr)) / 86400000);
   };
+
+function nowHHMM(){
+    const d = new Date();
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+
+function hhmmToMin(t){ const [h,m]=(t||'0:0').split(':').map(Number); return h*60+m; }
+function minToHHMM(x){ x=Math.max(0,Math.min(23*60+59,x)); return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0'); }
 
 async function loadState(){
     try{
@@ -104,6 +158,38 @@ async function loadState(){
     state.pointsLog = state.pointsLog || [];
     state.rewards = state.rewards || DEFAULT_REWARDS.map((r,i)=>({id:'rw'+i, name:r.name, cost:r.cost}));
     state.redemptions = state.redemptions || [];
+    state.learningGoals = state.learningGoals || DEFAULT_LEARNING_GOALS.map((g,i)=>({id:'lg'+i, name:g.name, notes:g.notes}));
+    state.calendarEvents = state.calendarEvents || null;
+    state.tomorrowPlan = state.tomorrowPlan || null;
+    state.settings = Object.assign({}, DEFAULT_SETTINGS, state.settings||{});
+    state.energyLog = state.energyLog || {};
+    state.feelings = state.feelings || {};
+    state.inbox = state.inbox || [];
+    state.syncedReminderIds = state.syncedReminderIds || [];
+    state.planSyncedIds = state.planSyncedIds || [];
+    state.migrations = state.migrations || {};
+    state.habits = (state.habits||[]).map(h => typeof h === 'string' ? {id:'h'+Math.random().toString(36).slice(2,8), name:h, cue:''} : Object.assign({cue:''}, h));
+    state.medications = state.medications.map(m => Object.assign({}, m, {
+      times: (m.times && m.times.length===m.timesPerDay) ? m.times : defaultMedTimes(m.timesPerDay)
+    }));
+    if(!state.migrations.v2SmallRewards){
+      SMALL_REWARDS.forEach((r,i)=>{
+        if(!state.rewards.some(x=>x.name===r.name)) state.rewards.unshift({id:'rws'+i+Date.now(), name:r.name, cost:r.cost});
+      });
+      state.migrations.v2SmallRewards = true;
+    }
+    if(!state.migrations.v2LightHabit){
+      if(!state.habits.some(h=>/luz natural/i.test(h.name))) state.habits.push({id:'hl'+Date.now(), name:'Luz natural nos primeiros 30 min do dia', cue:'eu acordar'});
+      state.migrations.v2LightHabit = true;
+    }
+    // boas-vindas depois de alguns dias fora (sem cobrança, só acolhimento)
+    const today = todayStr();
+    if(state.lastOpened && state.lastOpened !== today){
+      const gap = daysSince(state.lastOpened);
+      if(gap >= 3) state.welcomeBack = { gap, date: today, dismissed:false };
+    }
+    state.lastOpened = today;
+    saveState();
     renderAll();
   }
 
@@ -152,7 +238,7 @@ async function attemptSave(payload, attempt){
 
 function trimOldData(){
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-120);
-    const cutoffStr = cutoff.toISOString().slice(0,10);
+    const cutoffStr = localDateStr(cutoff);
     state.cleaning.forEach(t=>{
       if(t.history && t.history.length>120){
         t.history = t.history.filter(d=>d>=cutoffStr);

@@ -4,7 +4,39 @@
 
 const POINTS = { habit:2, med:2, cleaning:5, pomodoro:3, aiRecipeSave:3 };
 
+// Bônus rotativo: a cada semana uma categoria vale o dobro.
+// Serve pra renovar a novidade sem mudar a mecânica (o estímulo
+// de gamificação tende a cair depois das primeiras semanas).
+const BONUS_CATS = [
+    {key:'cleaning', label:'Limpeza'},
+    {key:'habit', label:'Hábitos'},
+    {key:'pomodoro', label:'Blocos de foco (Pomodoro)'},
+    {key:'med', label:'Remédios'},
+    {key:'aiRecipeSave', label:'Receitas salvas'}
+  ];
+
+function weekNumber(d){
+    d = d || new Date();
+    const jan1 = new Date(d.getFullYear(),0,1);
+    return Math.floor(((d - jan1)/86400000 + jan1.getDay()) / 7);
+  }
+
+function currentBonus(){
+    return BONUS_CATS[(weekNumber() + new Date().getFullYear()) % BONUS_CATS.length];
+  }
+
+function categoryFromReason(reason){
+    const r = (reason||'').toLowerCase();
+    if(r.startsWith('hábito')) return 'habit';
+    if(r.startsWith('remédio')) return 'med';
+    if(r.startsWith('limpeza')) return 'cleaning';
+    if(r.startsWith('pomodoro')) return 'pomodoro';
+    if(r.startsWith('receita salva')) return 'aiRecipeSave';
+    return null;
+  }
+
 function addPoints(amount, reason){
+    if(categoryFromReason(reason) === currentBonus().key) amount = amount * 2;
     state.points = Math.max(0, (state.points||0) + amount);
     state.pointsLog = state.pointsLog || [];
     state.pointsLog.push({date: todayStr(), amount, reason});
@@ -14,6 +46,8 @@ function addPoints(amount, reason){
 function renderRewards(){
     const bal = document.getElementById('pointsBalance');
     if(bal) bal.textContent = `🌱 ${state.points} sementes`;
+    const banner = document.getElementById('bonusBanner');
+    if(banner) banner.innerHTML = `<strong>✨ Bônus da semana: ${currentBonus().label}</strong>Tudo dessa categoria vale o dobro de sementes até domingo.`;
 
     const card = document.getElementById('rewardsCard');
     if(card){
